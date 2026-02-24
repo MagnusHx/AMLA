@@ -51,10 +51,10 @@ y0 = -max_oob_per_iteration[0]
 
 
 ## define the domain of the considered parameters
-n_estimators = (1,150)
-max_depth=(1,100)
-max_features = ('log2', 'sqrt', 'None')
+learning_rate = (0.001, 0.1)
+dropout=(0.05, 0.8)
 criterion = ('gini', 'entropy')
+batch_size =
 
 
 ## we have to define the function we want to maximize --> validation accuracy, 
@@ -69,7 +69,7 @@ def objective_function(x):
         maxf = x[2]
     
     #create the model
-    
+    model=Model(n_estimators=int(x[0]), max_depth=int(x[1]), max_features=maxf, criterion=x[3])
     # fit the model 
     
     global i
