@@ -1,5 +1,6 @@
 import skopt
 from skopt import gp_minimize
+from sklearn.model_selection import ParameterSampler, RandomizedSearchCV, cross_val_score
 import time
 
 # hyperparams dictionary 
