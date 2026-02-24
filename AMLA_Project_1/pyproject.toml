@@ -11,4 +11,5 @@ dependencies = [
     "scikit-optimize>=0.10.2",
     "torch>=2.10.0",
     "torchvision>=0.25.0",
+    "tqdm>=4.67.3",
 ]
