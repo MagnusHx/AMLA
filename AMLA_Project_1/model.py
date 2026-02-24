@@ -4,7 +4,7 @@ import torch.nn as nn
 class Model(nn.Module):
     def __init__(self,
                  in_channels=3,
-                 num_classes=8,
+                 num_classes=24,
                  c1=16, c2=32, c3=64, c4=128,
                  fc1=128, fc2=32,
                  dropout=0.2):
