@@ -32,7 +32,7 @@ class GreekCharacterDataset(Dataset):
         label = self.labels[idx]
         
         # Load image
-        image = Image.open(img_path).convert('RGB')
+        image = Image.open(img_path).convert("L")
         
         if self.transform:
             image = self.transform(image)
@@ -40,7 +40,7 @@ class GreekCharacterDataset(Dataset):
         return image, label
 
 
-def get_data_loaders(greek_dir, batch_size=32, train_split=0.8, img_size=64):
+def get_data_loaders(greek_dir, batch_size=32, train_split=0.8, img_size=105):
     """
     Create train and validation DataLoaders for Greek character dataset.
     
@@ -56,8 +56,8 @@ def get_data_loaders(greek_dir, batch_size=32, train_split=0.8, img_size=64):
     transform = transforms.Compose([
         transforms.Resize((img_size, img_size)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                           std=[0.229, 0.224, 0.225])
+        transforms.Normalize(mean=[0.5],
+                           std=[0.5])
     ])
     
     dataset = GreekCharacterDataset(greek_dir, transform=transform)

@@ -28,7 +28,7 @@ class Model(nn.Module):
 
             nn.Flatten(),
 
-            nn.Linear(2048, fc1),   # avoids hardcoding flatten size
+            nn.Linear(5408, fc1),   # avoids hardcoding flatten size
             nn.ReLU(),
             nn.Dropout(p=dropout),
 

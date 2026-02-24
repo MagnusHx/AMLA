@@ -18,14 +18,14 @@ def main():
         greek_dir,
         batch_size=32,
         train_split=0.8,
-        img_size=64
+        img_size=105
     )
     
     print(f"Training samples: {len(train_loader.dataset)}")
     print(f"Validation samples: {len(val_loader.dataset)}")
     
     # Create model
-    model = Model(in_channels=3, num_classes=24)
+    model = Model(in_channels=1, num_classes=24)
     print(f"\nModel created with {sum(p.numel() for p in model.parameters())} parameters")
     
     # Train
