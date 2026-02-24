@@ -2,7 +2,6 @@ import torch
 from pathlib import Path
 from model import Model
 from data import get_data_loaders
-from train import train_model
 
 
 def main():
@@ -24,21 +23,27 @@ def main():
     print(f"Training samples: {len(train_loader.dataset)}")
     print(f"Validation samples: {len(val_loader.dataset)}")
     
-    # Create model
+
     model = Model(in_channels=1, num_classes=24)
     print(f"\nModel created with {sum(p.numel() for p in model.parameters())} parameters")
     
-    # Train
+    # Train using model.fit
     print("\nStarting training...")
-    model = train_model(
-        model,
+    model = model.fit(
         train_loader,
-        val_loader,
+        val_loader=val_loader,
         num_epochs=10,
         learning_rate=0.001,
         device=device
     )
 
+    # Final evaluation on validation set and return metrics
+    val_loss, val_acc = model.evaluate(val_loader, device=device)
+    print(f"\nFinal validation loss: {val_loss:.4f}, accuracy: {val_acc:.4f}")
+    return val_loss, val_acc
+
 
 if __name__ == "__main__":
-    main()
+    metrics = main()
+    # metrics is (val_loss, val_acc)
+    print(f"Returned metrics: {metrics}")
