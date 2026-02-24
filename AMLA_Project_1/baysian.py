@@ -82,7 +82,7 @@ y0 = -max_oob_per_iteration[0]
 ## define the domain of the considered parameters
 learning_rate = (0.001, 0.1)
 dropout = (0.05, 0.8)
-learning_rate = Real(0.001, 0.1)
+learning_rate = Real(1e-6, 1e-1, prior='log-uniform')
 dropout = Real(0.05, 0.8)
 # use simple string labels for skopt categorical dimension
 criterion = Categorical(['crossentropy', 'multimargin'])
@@ -130,16 +130,19 @@ def objective_function(x):
     return -float(val_acc)
 
 np.int = int #numpy np.int deprecation workaround
-opt = gp_minimize(objective_function, # the function to minimize
-                  [learning_rate, dropout, criterion, batch_size],
-                                      # the bounds on each dimension of x
-                  acq_func="EI",      # the acquisition function
-                  n_initial_points=0, # no initial point except the one
-                  n_calls=19,         # the number of evaluations of objective_function 19 since we give one initial point
-                  x0=[x0,],           #initial point
-                  y0=[y0,],           #inital objective function value
-                  xi=0.1,             #exploration parameter
-                  noise=0.01**2)       # the noise level (optional)
+opt = gp_minimize(
+    objective_function,  # the function to minimize
+    [learning_rate, dropout, criterion, batch_size],
+    # the bounds on each dimension of x
+    acq_func="EI",  # the acquisition function
+    n_initial_points=5,  # add a few random initial points to explore
+    n_calls=19,  # total number of evaluations (kept modest to limit runtime)
+    x0=[x0],  # initial point
+    y0=[y0],  # initial objective function value
+    xi=0.1,  # exploration parameter
+    noise=0.01**2,  # the noise level (optional)
+    random_state=32,
+)
 
 # print results
 print('\nOptimization finished')
