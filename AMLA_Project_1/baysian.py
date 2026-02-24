@@ -2,9 +2,15 @@ import skopt
 from skopt import gp_minimize
 from sklearn.model_selection import ParameterSampler, RandomizedSearchCV, cross_val_score
 import time
+from model import Model
 
 # hyperparams dictionary 
-domain = 
+domain = {'kernel size': [3, 5, 7],
+          'optimizer': ['adam', 'sgd'],
+          'learning rate': [0.001, 0.01, 0.1],
+          'batch size': [32, 64, 128],
+          'dropout': [0.05, 0.1, 0.5, 0.8],
+          'criterion': ['CrossEntropyLoss', 'MultiMarginLoss']}
 
 # create the ParameterSampler
 param_list = list(ParameterSampler(domain, n_iter=20, random_state=32))
@@ -23,7 +29,7 @@ for params in param_list:
     print(params)
     
     #define model here
-    
+    model = Model()
     start = time.time()
     #train the model
 
