@@ -58,42 +58,39 @@ def validate(model, val_loader, loss_fn, device):
     return avg_loss, accuracy
 
 
-def train_model(model, train_loader, val_loader, num_epochs=10, learning_rate=0.001, device='cpu'):
+def train_model(model, train_loader, val_loader, optimizer, loss_fn, num_epochs=10, device='cpu'):
     """
     Training loop for the Greek character recognition model.
-    
+
     Args:
         model: The neural network model
         train_loader: DataLoader for training data
         val_loader: DataLoader for validation data
+        optimizer: Configured optimizer (e.g. Adam, SGD)
+        loss_fn: Loss function (e.g. CrossEntropyLoss, MultiMarginLoss)
         num_epochs: Number of epochs to train
-        learning_rate: Learning rate for optimizer
         device: Device to train on ('cpu' or 'cuda')
+
+    Returns:
+        best_val_accuracy: Best validation accuracy achieved (as a fraction, 0-1)
     """
-    loss_fn = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    
     model.to(device)
-    
+
     best_val_accuracy = 0.0
-    
+
     for epoch in range(num_epochs):
         print(f"\nEpoch {epoch+1}/{num_epochs}")
-        
-        # Train
+
         train_loss, train_acc = train_epoch(model, train_loader, loss_fn, optimizer, device)
-        
-        # Validate
         val_loss, val_acc = validate(model, val_loader, loss_fn, device)
-        
+
         print(f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%")
         print(f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%")
-        
-        # Save best model
+
         if val_acc > best_val_accuracy:
             best_val_accuracy = val_acc
             torch.save(model.state_dict(), 'best_model.pth')
             print(f"✓ Best model saved with validation accuracy: {val_acc:.2f}%")
-    
+
     print(f"\nTraining complete! Best validation accuracy: {best_val_accuracy:.2f}%")
-    return model
+    return best_val_accuracy / 100  # return as fraction for consistency with baysian.py
