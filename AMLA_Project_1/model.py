@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+
 class Model(nn.Module):
     def __init__(self,
                  in_channels=1,
@@ -26,9 +27,10 @@ class Model(nn.Module):
             nn.Dropout2d(p=dropout),
             nn.MaxPool2d(kernel_size=2),
 
+            nn.AdaptiveAvgPool2d((8, 8)),
             nn.Flatten(),
 
-            nn.Linear(5408, fc1),   # avoids hardcoding flatten size
+            nn.Linear(c3 * 8 * 8, fc1),
             nn.ReLU(),
             nn.Dropout(p=dropout),
 

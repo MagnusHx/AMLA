@@ -1,8 +1,13 @@
 import json
+from pathlib import Path
+
 import numpy as np
 import matplotlib.pyplot as plt
 
-with open('bo_results.json') as f:
+results_dir = Path(__file__).parent / "results"
+results_dir.mkdir(exist_ok=True)
+
+with (results_dir / "bo_results.json").open() as f:
     results = json.load(f)
 
 max_acc_per_iter = results['max_acc_per_iter']
@@ -16,5 +21,5 @@ plt.xlabel('Iterations')
 plt.ylabel('Best validation accuracy')
 plt.title('Comparison between Random Search and Bayesian Optimization')
 plt.legend()
-plt.savefig('bo_vs_random_search.png', dpi=150, bbox_inches='tight')
+plt.savefig(results_dir / 'bo_vs_random_search.png', dpi=150, bbox_inches='tight')
 plt.show()

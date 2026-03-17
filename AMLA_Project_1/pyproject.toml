@@ -6,8 +6,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "matplotlib>=3.10.8",
+    "modAL-python>=0.4.2.1",
     "numpy>=2.4.2",
-    "scikit-learn>=1.8.0",
+    "scikit-learn<1.8",
     "scikit-optimize>=0.10.2",
     "torch>=2.10.0",
     "torchvision>=0.25.0",

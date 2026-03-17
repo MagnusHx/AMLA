@@ -1,9 +1,10 @@
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Subset
 from torchvision import transforms
 from pathlib import Path
 from PIL import Image
 import numpy as np
+from sklearn.model_selection import train_test_split
 
 
 class GreekCharacterDataset(Dataset):
@@ -40,7 +41,7 @@ class GreekCharacterDataset(Dataset):
         return image, label
 
 
-def get_data_loaders(greek_dir, batch_size=32, train_split=0.8, img_size=105):
+def get_data_loaders(greek_dir, batch_size=32, train_split=0.8, img_size=105, seed=42):
     """
     Create train and validation DataLoaders for Greek character dataset.
     
@@ -49,6 +50,7 @@ def get_data_loaders(greek_dir, batch_size=32, train_split=0.8, img_size=105):
         batch_size: Batch size for DataLoader
         train_split: Fraction of data to use for training
         img_size: Size to resize images to
+        seed: Random seed for a reproducible split
     
     Returns:
         Tuple of (train_loader, val_loader)
@@ -62,12 +64,17 @@ def get_data_loaders(greek_dir, batch_size=32, train_split=0.8, img_size=105):
     
     dataset = GreekCharacterDataset(greek_dir, transform=transform)
     
-    # Split into train and validation
-    train_size = int(len(dataset) * train_split)
-    val_size = len(dataset) - train_size
-    train_dataset, val_dataset = torch.utils.data.random_split(
-        dataset, [train_size, val_size]
+    indices = np.arange(len(dataset))
+    labels = np.asarray(dataset.labels)
+    train_indices, val_indices = train_test_split(
+        indices,
+        train_size=train_split,
+        stratify=labels,
+        random_state=seed,
     )
+
+    train_dataset = Subset(dataset, train_indices.tolist())
+    val_dataset = Subset(dataset, val_indices.tolist())
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)

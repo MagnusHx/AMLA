@@ -1,205 +1,241 @@
+import argparse
+import json
 import time
-import random
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torch.nn as nn
-from pathlib import Path
+from scipy.stats import uniform
 from sklearn.model_selection import ParameterSampler
-import skopt
 from skopt import gp_minimize
+from skopt.space import Categorical, Real
 
-from model import Model
 from data import get_data_loaders
-from train import train_model
+from model import Model
+from train import build_loss_fn, build_optimizer, train_model
 
-# ----- Seed -----
-random.seed(2118)
-np.random.seed(2118)
-torch.manual_seed(2118)
 
-# ── Config ────────────────────────────────────────────────────────────────────
-GREEK_DIR   = Path(__file__).parent / 'Greek'
-DEVICE      = 'cuda' if torch.cuda.is_available() else 'cpu'
-NUM_EPOCHS  = 20
-NUM_CLASSES = 24
-TRAIN_SPLIT = 0.8
-IMG_SIZE    = 105
+RESULTS_DIR = Path(__file__).parent / "results"
+GREEK_DIR = Path(__file__).resolve().parent / "Greek"
 
-# ── Random search domain ──────────────────────────────────────────────────────
-domain_random = {
-    'learning_rate': [1e-4, 1e-3, 1e-2, 1e-1],
-    'dropout':       [0.05, 0.1, 0.2, 0.5, 0.8],
-    'batch_size':    [32, 64, 128],
-    'optimizer':     ['adam', 'sgd'],
-    'criterion':     ['CrossEntropyLoss', 'MultiMarginLoss'],
-}
 
-# ── Helper: build criterion ───────────────────────────────────────────────────
-def get_criterion(name):
-    if name == 'CrossEntropyLoss':
-        return nn.CrossEntropyLoss()
-    elif name == 'MultiMarginLoss':
-        return nn.MultiMarginLoss()
-    else:
-        raise ValueError(f"Unknown criterion: {name}")
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Random search vs Bayesian optimization for the CNN")
+    parser.add_argument("--random-iters", type=int, default=20)
+    parser.add_argument("--bo-iters", type=int, default=20)
+    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--img-size", type=int, default=105)
+    parser.add_argument("--train-split", type=float, default=0.8)
+    parser.add_argument("--seed", type=int, default=1422)
+    parser.add_argument("--device", type=str, default=None)
+    return parser.parse_args()
 
-# ── Helper: build optimizer ───────────────────────────────────────────────────
-def get_optimizer(name, model_params, lr):
-    if name == 'adam':
-        return torch.optim.Adam(model_params, lr=lr)
-    elif name == 'sgd':
-        return torch.optim.SGD(model_params, lr=lr, momentum=0.9)
-    else:
-        raise ValueError(f"Unknown optimizer: {name}")
 
-# ── Core evaluation function ──────────────────────────────────────────────────
-def evaluate_hyperparams(learning_rate, dropout, batch_size, optimizer_name, criterion_name):
-    """Build model, optimizer and criterion, then delegate to train_model."""
+def resolve_device(device_arg: str | None) -> str:
+    if device_arg:
+        return device_arg
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def evaluate_hyperparams(
+    learning_rate: float,
+    dropout: float,
+    batch_size: int,
+    optimizer_name: str,
+    criterion_name: str,
+    args: argparse.Namespace,
+    device: str,
+) -> float:
     train_loader, val_loader = get_data_loaders(
         GREEK_DIR,
         batch_size=batch_size,
-        train_split=TRAIN_SPLIT,
-        img_size=IMG_SIZE
+        train_split=args.train_split,
+        img_size=args.img_size,
+        seed=args.seed,
     )
 
-    model     = Model(in_channels=1, num_classes=NUM_CLASSES, dropout=dropout)
-    loss_fn   = get_criterion(criterion_name)
-    optimizer = get_optimizer(optimizer_name, model.parameters(), learning_rate)
+    model = Model(dropout=dropout, num_classes=24)
+    optimizer = build_optimizer(model, optimizer_name=optimizer_name, learning_rate=learning_rate)
+    loss_fn = build_loss_fn(criterion_name)
 
-    best_val_acc = train_model(
-        model, train_loader, val_loader,
+    return train_model(
+        model,
+        train_loader,
+        val_loader,
         optimizer=optimizer,
         loss_fn=loss_fn,
-        num_epochs=NUM_EPOCHS,
-        device=DEVICE
+        num_epochs=args.epochs,
+        device=device,
     )
 
-    return best_val_acc  # fraction 0-1
 
-# ── Random Search ─────────────────────────────────────────────────────────────
-print("=" * 60)
-print("RANDOM SEARCH")
-print("=" * 60)
+def to_serializable_search_point(point: list[object]) -> dict[str, object]:
+    return {
+        "learning_rate": float(point[0]),
+        "dropout": float(point[1]),
+        "batch_size": int(point[2]),
+        "optimizer": str(point[3]),
+        "criterion": str(point[4]),
+    }
 
-param_list = list(ParameterSampler(domain_random, n_iter=20, random_state=32))
 
-current_best     = 0.0
-best_iter        = 0
-max_acc_per_iter = []
+def main() -> None:
+    args = parse_args()
+    RESULTS_DIR.mkdir(exist_ok=True)
+    device = resolve_device(args.device)
 
-for i, params in enumerate(param_list):
-    print(f"\nIteration {i}: {params}")
-    start = time.time()
+    domain_random = {
+        "learning_rate": uniform(0.0005, 0.0495),
+        "dropout": uniform(0.05, 0.45),
+        "batch_size": [16, 32, 64],
+        "optimizer": ["adam", "sgd"],
+        "criterion": ["crossentropy", "multimargin"],
+    }
 
-    val_acc = evaluate_hyperparams(
-        learning_rate  = params['learning_rate'],
-        dropout        = params['dropout'],
-        batch_size     = params['batch_size'],
-        optimizer_name = params['optimizer'],
-        criterion_name = params['criterion'],
+    print("Random search candidates")
+    param_list = list(ParameterSampler(domain_random, n_iter=args.random_iters, random_state=args.seed))
+    print(param_list)
+
+    current_best = 0.0
+    max_acc_per_iter = []
+    random_history = []
+
+    for index, params in enumerate(param_list, start=1):
+        print(f"\nRandom search iteration {index}/{args.random_iters}")
+        print(params)
+        start = time.time()
+
+        val_acc = evaluate_hyperparams(
+            learning_rate=float(params["learning_rate"]),
+            dropout=float(params["dropout"]),
+            batch_size=int(params["batch_size"]),
+            optimizer_name=str(params["optimizer"]),
+            criterion_name=str(params["criterion"]),
+            args=args,
+            device=device,
+        )
+
+        current_best = max(current_best, float(val_acc))
+        max_acc_per_iter.append(current_best)
+        random_history.append(
+            {
+                "params": {
+                    "learning_rate": float(params["learning_rate"]),
+                    "dropout": float(params["dropout"]),
+                    "batch_size": int(params["batch_size"]),
+                    "optimizer": str(params["optimizer"]),
+                    "criterion": str(params["criterion"]),
+                },
+                "val_accuracy": float(val_acc),
+                "elapsed_seconds": time.time() - start,
+            }
+        )
+        print(f"Validation accuracy: {val_acc:.4f}")
+
+    x0 = [
+        float(param_list[0]["learning_rate"]),
+        float(param_list[0]["dropout"]),
+        int(param_list[0]["batch_size"]),
+        str(param_list[0]["optimizer"]),
+        str(param_list[0]["criterion"]),
+    ]
+    y0 = -float(random_history[0]["val_accuracy"])
+
+    search_space = [
+        Real(0.0005, 0.05, name="learning_rate"),
+        Real(0.05, 0.5, name="dropout"),
+        Categorical([16, 32, 64], name="batch_size"),
+        Categorical(["adam", "sgd"], name="optimizer"),
+        Categorical(["crossentropy", "multimargin"], name="criterion"),
+    ]
+
+    objective_calls = []
+
+    def objective_function(x: list[object]) -> float:
+        start = time.time()
+        val_acc = evaluate_hyperparams(
+            learning_rate=float(x[0]),
+            dropout=float(x[1]),
+            batch_size=int(x[2]),
+            optimizer_name=str(x[3]),
+            criterion_name=str(x[4]),
+            args=args,
+            device=device,
+        )
+        objective_calls.append(
+            {
+                "params": to_serializable_search_point(x),
+                "val_accuracy": float(val_acc),
+                "elapsed_seconds": time.time() - start,
+            }
+        )
+        print(f"BO iteration {len(objective_calls)}/{args.bo_iters}: val_acc={val_acc:.4f}")
+        return -float(val_acc)
+
+    bo_additional_calls = max(args.bo_iters - 1, 0)
+    opt = gp_minimize(
+        objective_function,
+        search_space,
+        acq_func="EI",
+        n_initial_points=0,
+        n_calls=bo_additional_calls,
+        x0=[x0],
+        y0=[y0],
+        xi=0.1,
+        noise=0.01**2,
+        random_state=args.seed,
     )
 
-    print(f"Val accuracy: {val_acc:.4f} | Time: {time.time() - start:.1f}s")
+    bo_func_vals = np.asarray(opt.func_vals, dtype=float)
+    bo_best_per_iter = np.maximum.accumulate(-bo_func_vals).ravel()
+    random_best_per_iter = np.asarray(max_acc_per_iter, dtype=float)
 
-    if val_acc > current_best:
-        current_best = val_acc
-        best_iter    = i
+    print("\nOptimization finished")
+    print("Best encoded x:", opt.x)
+    print("Best objective (neg val acc):", opt.fun)
+    print("Best hyperparameters:", to_serializable_search_point(opt.x))
 
-    max_acc_per_iter.append(current_best)
+    plot_path = RESULTS_DIR / "bo_vs_random_search.png"
+    plt.figure(figsize=(9, 5))
+    plt.plot(range(1, len(random_best_per_iter) + 1), random_best_per_iter, "o-", color="tab:red", label="Random Search")
+    plt.plot(range(1, len(bo_best_per_iter) + 1), bo_best_per_iter, "o-", color="tab:blue", label="Bayesian Optimization")
+    plt.xlabel("Iterations")
+    plt.ylabel("Best validation accuracy")
+    plt.title("Random Search vs Bayesian Optimization")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(plot_path, dpi=150, bbox_inches="tight")
+    plt.close()
 
-print(f"\nRandom search best: {current_best:.4f} (iteration {best_iter})")
+    results = {
+        "config": {
+            "seed": args.seed,
+            "epochs": args.epochs,
+            "img_size": args.img_size,
+            "train_split": args.train_split,
+            "device": device,
+            "random_iters": args.random_iters,
+            "bo_iters": args.bo_iters,
+        },
+        "random_search": random_history,
+        "bayesian_optimization": {
+            "evaluations": objective_calls,
+            "best_x": to_serializable_search_point(opt.x),
+            "best_val_accuracy": float(-opt.fun),
+            "func_vals": bo_func_vals.tolist(),
+        },
+        "max_acc_per_iter": random_best_per_iter.tolist(),
+        "bo_func_vals": bo_func_vals.tolist(),
+    }
 
-# ── Bayesian Optimization ─────────────────────────────────────────────────────
-print("\n" + "=" * 60)
-print("BAYESIAN OPTIMIZATION")
-print("=" * 60)
+    results_path = RESULTS_DIR / "bo_results.json"
+    with results_path.open("w", encoding="utf-8") as handle:
+        json.dump(results, handle, indent=2)
 
-x0 = [
-    param_list[0]['learning_rate'],
-    param_list[0]['dropout'],
-    param_list[0]['batch_size'],
-    param_list[0]['optimizer'],
-    param_list[0]['criterion'],
-]
-y0 = -max_acc_per_iter[0]
+    print(f"Results saved to: {results_path}")
+    print(f"Plot saved to:    {plot_path}")
 
-# Domain (plain tuples, same style as notebook)
-learning_rate = (1e-4, 1e-1)
-dropout       = (0.05, 0.8)
-batch_size    = (32, 128)                            # cast to int inside objective
-optimizer     = ('adam', 'sgd')
-criterion     = ('CrossEntropyLoss', 'MultiMarginLoss')
 
-global bo_iter
-bo_iter = 1
-
-def objective_function(x):
-    global bo_iter
-    lr        = x[0]
-    drop      = x[1]
-    bs        = int(round(x[2]))
-    opt_name  = x[3]
-    crit_name = x[4]
-
-    print(f"\nBO iteration {bo_iter}: lr={lr:.5f}, dropout={drop:.3f}, "
-          f"batch={bs}, opt={opt_name}, criterion={crit_name}")
-    bo_iter += 1
-
-    val_acc = evaluate_hyperparams(lr, drop, bs, opt_name, crit_name)
-    print(f"Val accuracy: {val_acc:.4f}")
-    return -val_acc
-
-opt = gp_minimize(
-    objective_function,
-    [learning_rate, dropout, batch_size, optimizer, criterion],
-    acq_func='EI',
-    n_initial_points=0,
-    n_calls=19,
-    x0=[x0],
-    y0=[y0],
-    xi=0.1,
-    noise=0.01**2,
-    random_state=32
-)
-
-# ── Results ───────────────────────────────────────────────────────────────────
-bo_best_per_iter = np.maximum.accumulate(-opt.func_vals).ravel()
-
-print("\n" + "=" * 60)
-print("RESULTS SUMMARY")
-print("=" * 60)
-print(f"Random search best accuracy : {current_best:.4f}")
-print(f"Bayesian optimization best  : {bo_best_per_iter[-1]:.4f}")
-print(f"\nBO best hyperparameters:")
-print(f"  learning_rate : {opt.x[0]:.6f}")
-print(f"  dropout       : {opt.x[1]:.4f}")
-print(f"  batch_size    : {int(round(opt.x[2]))}")
-print(f"  optimizer     : {opt.x[3]}")
-print(f"  criterion     : {opt.x[4]}")
-
-# ── Save results ─────────────────────────────────────────────────────────────
-import json
-results = {
-    'max_acc_per_iter': max_acc_per_iter,
-    'bo_func_vals': opt.func_vals.tolist(),
-    'bo_best_x': [x if isinstance(x, str) else int(x) if hasattr(x, '__index__') else float(x) for x in opt.x],
-}
-with open('bo_results.json', 'w') as f:
-    json.dump(results, f)
-print("Results saved to bo_results.json")
-
-# ── Plot: Random Search vs Bayesian Optimization ──────────────────────────────
-import matplotlib.pyplot as plt
-
-iterations = range(1, len(max_acc_per_iter) + 1)
-
-plt.figure()
-plt.plot(iterations, max_acc_per_iter, 'r.-', label='Random Search')
-plt.plot(iterations, bo_best_per_iter, 'b.-', label='Bayesian Optimization')
-plt.xlabel('Iterations')
-plt.ylabel('Best validation accuracy')
-plt.title('Comparison between Random Search and Bayesian Optimization')
-plt.legend()
-plt.savefig('bo_vs_random_search.png', dpi=150, bbox_inches='tight')
-plt.show()
-print("\nPlot saved to bo_vs_random_search.png")
+if __name__ == "__main__":
+    main()
